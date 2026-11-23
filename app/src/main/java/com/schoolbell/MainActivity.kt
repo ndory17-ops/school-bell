@@ -17,6 +17,8 @@ class MainActivity : Activity() {
 
     private lateinit var clock: TextView
     private lateinit var status: TextView
+    private lateinit var selected: TextView
+
     private val handler = Handler(Looper.getMainLooper())
 
     private val clockTask = object : Runnable {
@@ -24,6 +26,7 @@ class MainActivity : Activity() {
             clock.text = SimpleDateFormat(
                 "hh:mm:ss a", Locale.getDefault()
             ).format(Date())
+
             handler.postDelayed(this, 1000)
         }
     }
@@ -55,37 +58,49 @@ class MainActivity : Activity() {
         }
 
         status = TextView(this).apply {
-            text = "الجرس متوقف"
             textSize = 18f
+            gravity = Gravity.CENTER
+            setTextColor(0xFF555555.toInt())
+        }
+
+        selected = TextView(this).apply {
+            textSize = 15f
             gravity = Gravity.CENTER
             setTextColor(0xFF555555.toInt())
         }
 
         val start = Button(this).apply {
             text = "▶ تشغيل جدول الجرس"
-            textSize = 18f
             setOnClickListener {
-                val intent = Intent(this@MainActivity, BellService::class.java)
-                intent.action = "START"
-                startForegroundService(intent)
+                prefs.edit().putBoolean("enabled", true).apply()
+
+                val serviceIntent = Intent(
+                    this@MainActivity, BellService::class.java
+                )
+                serviceIntent.action = "START"
+
+                startForegroundService(serviceIntent)
                 status.text = "الجرس يعمل"
             }
         }
 
         val stop = Button(this).apply {
             text = "■ إيقاف الجرس"
-            textSize = 18f
             setOnClickListener {
-                val intent = Intent(this@MainActivity, BellService::class.java)
-                intent.action = "STOP"
-                startService(intent)
+                prefs.edit().putBoolean("enabled", false).apply()
+
+                val serviceIntent = Intent(
+                    this@MainActivity, BellService::class.java
+                )
+                serviceIntent.action = "STOP"
+
+                startService(serviceIntent)
                 status.text = "الجرس متوقف"
             }
         }
 
         val choose = Button(this).apply {
             text = "🎵 اختيار نغمة من الهاتف"
-            textSize = 17f
             setOnClickListener {
                 val picker = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                     type = "audio/*"
@@ -93,16 +108,6 @@ class MainActivity : Activity() {
                 }
                 startActivityForResult(picker, 100)
             }
-        }
-
-        val selected = TextView(this).apply {
-            text = if (prefs.contains("sound_uri"))
-                "تم حفظ نغمة مخصصة"
-            else
-                "النغمة الافتراضية"
-            textSize = 15f
-            gravity = Gravity.CENTER
-            setTextColor(0xFF555555.toInt())
         }
 
         layout.addView(title)
@@ -114,7 +119,25 @@ class MainActivity : Activity() {
         layout.addView(selected)
 
         setContentView(layout)
+
+        status.text = if (prefs.getBoolean("enabled", false))
+            "الجرس مفعّل سابقاً"
+        else
+            "الجرس متوقف"
+
+        updateSelectedSound()
         handler.post(clockTask)
+    }
+
+    private fun updateSelectedSound() {
+        val saved = getSharedPreferences(
+            "school_bell", MODE_PRIVATE
+        ).getString("sound_uri", null)
+
+        selected.text = if (saved == null)
+            "النغمة الافتراضية"
+        else
+            "تم اختيار نغمة مخصصة"
     }
 
     override fun onActivityResult(
@@ -126,16 +149,19 @@ class MainActivity : Activity() {
 
         if (requestCode == 100 && resultCode == RESULT_OK) {
             val uri: Uri = data?.data ?: return
+
             try {
                 contentResolver.takePersistableUriPermission(
-                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
             } catch (_: Exception) {}
 
-            getSharedPreferences("school_bell", MODE_PRIVATE)
-                .edit()
-                .putString("sound_uri", uri.toString())
-                .apply()
+            getSharedPreferences(
+                "school_bell", MODE_PRIVATE
+            ).edit().putString("sound_uri", uri.toString()).apply()
+
+            updateSelectedSound()
 
             Toast.makeText(
                 this, "تم حفظ النغمة", Toast.LENGTH_SHORT
