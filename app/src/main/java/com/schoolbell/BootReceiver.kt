@@ -17,7 +17,11 @@ class BootReceiver : BroadcastReceiver() {
 
         if (!prefs.getBoolean("enabled", false)) return
 
-        val serviceIntent = Intent(context, BellService::class.java)
+        val serviceIntent = Intent(
+            context, BellService::class.java
+        ).apply {
+            action = "START"
+        }
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -26,7 +30,7 @@ class BootReceiver : BroadcastReceiver() {
                 context.startService(serviceIntent)
             }
         } catch (_: Exception) {
-            // قد يمنع Android التشغيل التلقائي في بعض الحالات
+            // قد تمنع بعض إصدارات أندرويد التشغيل التلقائي
         }
     }
 }
