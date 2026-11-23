@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -22,6 +23,7 @@ class BellService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var player: MediaPlayer? = null
+    private var wakeLock: PowerManager.WakeLock? = null
     private var running = false
     private var lastRing = ""
 
@@ -40,7 +42,10 @@ class BellService : Service() {
 
             val now = Calendar.getInstance()
             val day = now.get(Calendar.DAY_OF_WEEK)
-            val time = SimpleDateFormat("HH:mm", Locale.US).format(Date())
+            val time = SimpleDateFormat(
+                "HH:mm", Locale.US
+            ).format(Date())
+
             val key = "$day-$time"
 
             if (day in Calendar.SUNDAY..Calendar.THURSDAY &&
@@ -66,18 +71,22 @@ class BellService : Service() {
     ): Int {
 
         if (intent?.action == "STOP") {
-            running = false
-            handler.removeCallbacks(checker)
-            player?.release()
-            player = null
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            stopBellService()
             return START_NOT_STICKY
         }
 
         startForeground(1, makeNotification())
+
         if (!running) {
             running = true
+
+            val power = getSystemService(POWER_SERVICE) as PowerManager
+            wakeLock = power.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "SchoolBell::WakeLock"
+            )
+            wakeLock?.acquire()
+
             handler.post(checker)
         }
 
@@ -96,7 +105,7 @@ class BellService : Service() {
                 MediaPlayer.create(this, Uri.parse(saved))
             } else {
                 val uri = RingtoneManager.getDefaultUri(
-                    RingtoneManager.TYPE_NOTIFICATION
+                    RingtoneManager.TYPE_ALARM
                 )
                 MediaPlayer.create(this, uri)
             }
@@ -105,11 +114,28 @@ class BellService : Service() {
                 it.release()
                 if (player === it) player = null
             }
+
             player?.start()
         } catch (_: Exception) {
             player?.release()
             player = null
         }
+    }
+
+    private fun stopBellService() {
+        running = false
+        handler.removeCallbacks(checker)
+
+        player?.release()
+        player = null
+
+        wakeLock?.let {
+            if (it.isHeld) it.release()
+        }
+        wakeLock = null
+
+        stopForeground(true)
+        stopSelf()
     }
 
     private fun createNotificationChannel() {
@@ -119,6 +145,7 @@ class BellService : Service() {
                 "جرس المدرسة",
                 NotificationManager.IMPORTANCE_LOW
             )
+
             getSystemService(NotificationManager::class.java)
                 .createNotificationChannel(channel)
         }
@@ -144,6 +171,11 @@ class BellService : Service() {
         handler.removeCallbacks(checker)
         player?.release()
         player = null
+
+        wakeLock?.let {
+            if (it.isHeld) it.release()
+        }
+
         super.onDestroy()
     }
 
